@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Homology for TDA</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});"></script>
+</head>
+<body>
+
+<div class="cover">
+  <div class="kicker">Study note 1 of 2</div>
+  <h1>Homology for Topological Data Analysis</h1>
+  <p>The part of homology theory that TDA actually uses: simplices, simplicial complexes, chains, the boundary map,
+     homology groups and Betti numbers, coefficients, maps induced by inclusions, and homotopy invariance.
+     Definitions and statements only, no proofs. Every figure in this note was drawn for it.</p>
+  <p>Reference: A. Hatcher, <i>Algebraic Topology</i>, Chapter 2 (Sections 2.1 and the first part of 2.2).
+     Sections of the book that are not needed for TDA are listed at the end, so you know what was left out and why.</p>
+  <div class="meta">Choi Sejin &middot; Sogang University, Mathematics &middot; October 2026</div>
+</div>
+
+<section class="cont">
+<h1>0. Why TDA needs homology</h1>
+<p class="lead">TDA builds a shape out of data points and then asks: how many pieces does the shape have, how many holes, how many
+enclosed voids? Homology is the tool that turns these questions into numbers that a computer can calculate.</p>
+<p>Three ideas carry the whole subject:</p>
+<ol>
+  <li>A shape is cut into simple building blocks (<b>simplices</b>): points, segments, triangles, tetrahedra.</li>
+  <li>A <b>boundary map</b> $\partial$ records which blocks sit on the edge of which other blocks. The key fact is $\partial\partial=0$.</li>
+  <li><b>Homology</b> counts the cycles that are not boundaries. The counts are the <b>Betti numbers</b>
+      $b_0$ (pieces), $b_1$ (loops), $b_2$ (voids).</li>
+</ol>
+<p>Persistent homology (study note 2) adds one more idea: when the shape grows, an <b>inclusion map</b> between the small shape and
+the big shape tells us which holes survive and which get filled in. So this note ends with maps between complexes.</p>
+
+<h2>1. Simplices</h2>
+<div class="def"><b class="t">Definition.</b> An <b>$n$-simplex</b> is the smallest convex set containing $n+1$ points
+$v_0,\dots,v_n$ that do not all lie in a hyperplane of dimension less than $n$. We write it $[v_0,\dots,v_n]$.
+The points $v_i$ are its <b>vertices</b>, and $n$ is its <b>dimension</b>.</div>
+<figure><img src="../figures/fig_simplices.png" alt="simplices">
+<figcaption>Figure 1. Simplices of dimension 0, 1, 2, 3. The arrows show the orientation given by the order of the vertices.</figcaption></figure>
+<p>"Do not lie in a hyperplane of dimension less than $n$" just means the points are in general position: three points are not on
+one line, four points are not on one plane. Then the convex hull really has dimension $n$.</p>
+<div class="def"><b class="t">Standard simplex.</b>
+$$\Delta^n=\Big\{(t_0,\dots,t_n)\in\mathbb{R}^{n+1}\;\Big|\;\textstyle\sum_i t_i=1,\ t_i\ge 0\Big\}.$$
+Any $n$-simplex $[v_0,\dots,v_n]$ is the image of $\Delta^n$ under the linear map $(t_0,\dots,t_n)\mapsto\sum_i t_i v_i$.
+The numbers $t_i$ are the <b>barycentric coordinates</b> of a point of the simplex.</div>
+<div class="def"><b class="t">Faces.</b> Deleting one vertex $v_i$ gives an $(n-1)$-simplex
+$[v_0,\dots,\hat v_i,\dots,v_n]$ (the hat means "leave this one out"), called a <b>face</b>. The union of all faces is the
+<b>boundary</b> $\partial\Delta^n$; the rest is the <b>open simplex</b> $\mathring{\Delta}^n=\Delta^n-\partial\Delta^n$.</div>
+<div class="def"><b class="t">Orientation.</b> Writing the vertices in a fixed order $[v_0,\dots,v_n]$ gives the simplex an
+orientation. Swapping two vertices reverses it: $[v_1,v_0]=-[v_0,v_1]$. Orientation is what makes the signs in the boundary
+formula below work. (With $\mathbb{Z}/2$ coefficients, which TDA software uses, signs disappear; see Section 6.)</div>
+
+<h2>2. Simplicial complexes</h2>
+<p>A single simplex is boring. Shapes are built by gluing simplices along faces.</p>
+<div class="def"><b class="t">Definition (abstract simplicial complex).</b> Let $V$ be a finite set of vertices. An
+<b>abstract simplicial complex</b> $K$ is a family of non-empty finite subsets of $V$ such that
+<ul>
+  <li>every one-point set $\{v\}$, $v\in V$, is in $K$, and</li>
+  <li>if $\sigma\in K$ and $\tau\subseteq\sigma$ is non-empty, then $\tau\in K$ (closed under taking faces).</li>
+</ul>
+A set $\sigma\in K$ with $k+1$ elements is a <b>$k$-simplex</b> of $K$.</div>
+<p>This is the version TDA uses: the Vietoris&ndash;Rips complex of study note 2 is exactly a family of vertex sets closed under subsets.
+Drawing it in space (a <b>geometric realization</b>) is only for pictures.</p>
+<figure><img src="../figures/fig_complex_chains.png" alt="complex">
+<figcaption>Figure 2. Left: a complex with vertices $a,\dots,g$. The triangle $\{d,e,f\}$ is filled (it is a 2-simplex of $K$), the triangle
+$\{a,b,c\}$ is hollow (only its three edges are in $K$). Right: the two 1-cycles that will matter in Section 5.</figcaption></figure>
+<div class="note"><b>Hatcher's $\Delta$-complexes.</b> Hatcher defines homology for <b>$\Delta$-complexes</b>: a space $X$ with
+a collection of maps $\sigma_\alpha:\Delta^n\to X$ such that (i) each $\sigma_\alpha$ is injective on the open simplex and every point
+of $X$ is in exactly one such open image, (ii) the restriction of $\sigma_\alpha$ to a face is again one of the maps $\sigma_\beta$,
+and (iii) $A\subset X$ is open iff every $\sigma_\alpha^{-1}(A)$ is open. A $\Delta$-complex may glue a simplex to itself (the torus
+can be made from two triangles). An abstract simplicial complex is a special case where every simplex is determined by its vertex set.
+For TDA the special case is all we need.</div>
+
+<h2>3. Chains</h2>
+<div class="def"><b class="t">Definition.</b> Let $K$ be a simplicial complex and let $R$ be a ring of coefficients
+($\mathbb{Z}$, or a field such as $\mathbb{Z}/2$ or $\mathbb{Q}$). The <b>$n$-chains</b> $C_n(K)$ are the formal sums
+$$c=\sum_\alpha r_\alpha\,\sigma_\alpha,\qquad r_\alpha\in R,$$
+one coefficient for each $n$-simplex $\sigma_\alpha$ of $K$. Chains are added coefficient by coefficient.
+With $R=\mathbb{Z}$, $C_n(K)$ is the free abelian group with basis the $n$-simplices (Hatcher's definition);
+with a field $R$, $C_n(K)$ is a vector space whose dimension is the number of $n$-simplices.</div>
+<p>A chain is a way to say "these simplices, with these multiplicities". A 1-chain is a bunch of edges, a 2-chain a bunch of triangles.
+Over $\mathbb{Z}/2$ the coefficients are $0$ or $1$, so a chain is just a <b>set</b> of simplices and $c+c=0$.</p>
+
+<h2>4. The boundary map</h2>
+<div class="def"><b class="t">Definition.</b> The <b>boundary map</b> $\partial_n:C_n(K)\to C_{n-1}(K)$ is the linear map defined on each
+$n$-simplex by
+$$\partial_n[v_0,\dots,v_n]=\sum_{i=0}^{n}(-1)^i\,[v_0,\dots,\hat v_i,\dots,v_n],$$
+the alternating sum of the faces. For $n=0$, $\partial_0=0$.</div>
+<p>Examples: $\partial[v_0,v_1]=v_1-v_0$ (end minus start), and $\partial[v_0,v_1,v_2]=[v_1,v_2]-[v_0,v_2]+[v_0,v_1]$, the three
+edges going around the triangle in a consistent direction.</p>
+<figure><img src="../figures/fig_faces_boundary.png" alt="boundary">
+<figcaption>Figure 3. The boundary of a triangle is its three edges with signs that make them run around the triangle. Taking the boundary again,
+each vertex receives one $+1$ and one $-1$, so the result is zero.</figcaption></figure>
+<div class="def"><b class="t">Fundamental fact (Hatcher Lemma 2.1).</b> $\;\partial_{n-1}\circ\partial_n=0$ for every $n$.
+In words: the boundary of a boundary is empty. Therefore $\operatorname{im}\partial_{n+1}\subseteq\ker\partial_n$.</div>
+<div class="def"><b class="t">Chain complex.</b> The sequence
+$$\cdots\xrightarrow{\partial_{n+2}}C_{n+1}(K)\xrightarrow{\partial_{n+1}}C_n(K)\xrightarrow{\partial_n}C_{n-1}(K)\xrightarrow{\partial_{n-1}}\cdots\xrightarrow{\partial_1}C_0(K)\xrightarrow{\partial_0}0$$
+with $\partial\partial=0$ is called the <b>simplicial chain complex</b> of $K$.</div>
+
+<h2>5. Cycles, boundaries, homology, Betti numbers</h2>
+<div class="def"><b class="t">Definitions.</b>
+<ul>
+  <li>$Z_n(K)=\ker\partial_n$ are the <b>$n$-cycles</b>: chains with empty boundary (closed loops, closed surfaces).</li>
+  <li>$B_n(K)=\operatorname{im}\partial_{n+1}$ are the <b>$n$-boundaries</b>: chains that are the boundary of something one dimension higher.</li>
+  <li>Because $\partial\partial=0$, $B_n\subseteq Z_n$. The <b>$n$-th homology group</b> is the quotient
+  $$H_n(K)=Z_n(K)/B_n(K)=\ker\partial_n/\operatorname{im}\partial_{n+1}.$$</li>
+  <li>Two cycles $z,z'$ are <b>homologous</b> ($[z]=[z']$) if $z-z'$ is a boundary. An element $[z]\in H_n$ is a <b>homology class</b>.</li>
+  <li>The <b>$n$-th Betti number</b> is $b_n=\operatorname{rank}H_n(K)$ (over $\mathbb{Z}$) or $b_n=\dim H_n(K)$ (over a field).</li>
+</ul></div>
+<p>The slogan: <b>homology counts cycles that are not filled in.</b> A loop that bounds a filled region is "trivial"; a loop around a hole is not.</p>
+<table>
+<tr><th>group</th><th>what a class looks like</th><th>$b_n$ counts</th></tr>
+<tr><td>$H_0$</td><td>a vertex, up to walking along edges</td><td>connected pieces (components)</td></tr>
+<tr><td>$H_1$</td><td>a closed loop of edges, up to filled triangles</td><td>independent loops (holes you can put a finger through)</td></tr>
+<tr><td>$H_2$</td><td>a closed surface of triangles, up to filled tetrahedra</td><td>enclosed voids (hollow spaces)</td></tr>
+</table>
+<h3>Worked example (Figure 2, coefficients $\mathbb{Z}/2$)</h3>
+<p>The complex has 7 vertices, 7 edges and 1 triangle, so $\dim C_0=7$, $\dim C_1=7$, $\dim C_2=1$.</p>
+<ul>
+  <li><b>$H_0$.</b> Two vertices are homologous exactly when a path of edges joins them ($a-b=\partial[a,b]$ is a boundary, and so on).
+  Vertices $a,\dots,f$ are all joined; $g$ is alone. So $b_0=2$.</li>
+  <li><b>$H_1$.</b> The 1-cycles are generated by the two triangle outlines $z_1=\{ab,bc,ca\}$ and $z_2=\{de,ef,fd\}$
+  (the connecting edge $bd$ is in no cycle). $z_2=\partial\{d,e,f\}$ is a boundary; $z_1$ is not, because no 2-simplex has it as boundary.
+  So $H_1$ is spanned by $[z_1]$ and $b_1=1$.</li>
+  <li><b>$H_2$.</b> The only 2-chain is the triangle itself, and its boundary is $z_2\ne0$, so there are no 2-cycles: $b_2=0$.</li>
+</ul>
+<div class="note"><b>How a computer does this.</b> Write $\partial_n$ as a matrix (rows = $(n-1)$-simplices, columns = $n$-simplices).
+Then $\dim Z_n=\#\{n\text{-simplices}\}-\operatorname{rank}\partial_n$, $\dim B_n=\operatorname{rank}\partial_{n+1}$, and
+$b_n=\dim Z_n-\dim B_n$. Homology is linear algebra.</div>
+
+<h2>6. Standard examples and the Euler characteristic</h2>
+<figure><img src="../figures/fig_betti_shapes.png" alt="betti">
+<figcaption>Figure 4. The three shapes every TDA tutorial uses. A triangulated circle, sphere and torus give these Betti numbers,
+and (by homotopy invariance, Section 9) so does any other triangulation.</figcaption></figure>
+<table>
+<tr><th>space</th><th class="c">$H_0$</th><th class="c">$H_1$</th><th class="c">$H_2$</th><th>reading</th></tr>
+<tr><td>point, filled disk, filled ball</td><td class="c">$\mathbb{Z}$</td><td class="c">$0$</td><td class="c">$0$</td><td>one piece, nothing else</td></tr>
+<tr><td>circle $S^1$ (and the annulus, the M&ouml;bius band)</td><td class="c">$\mathbb{Z}$</td><td class="c">$\mathbb{Z}$</td><td class="c">$0$</td><td>one loop</td></tr>
+<tr><td>sphere $S^2$</td><td class="c">$\mathbb{Z}$</td><td class="c">$0$</td><td class="c">$\mathbb{Z}$</td><td>one void, no loop</td></tr>
+<tr><td>torus $T^2$</td><td class="c">$\mathbb{Z}$</td><td class="c">$\mathbb{Z}\oplus\mathbb{Z}$</td><td class="c">$\mathbb{Z}$</td><td>two loops (around and through), one void</td></tr>
+<tr><td>two disjoint circles</td><td class="c">$\mathbb{Z}^2$</td><td class="c">$\mathbb{Z}^2$</td><td class="c">$0$</td><td>two pieces, two loops</td></tr>
+</table>
+<div class="def"><b class="t">Reduced homology.</b> It is often convenient to not count the "obvious" component. The
+<b>reduced</b> groups $\tilde H_n(K)$ satisfy $\tilde H_n=H_n$ for $n\ge1$ and $H_0=\tilde H_0\oplus\mathbb{Z}$, so $\tilde b_0=b_0-1$.
+In a persistence barcode, $H_0$ always has exactly one bar that never dies; that bar is the difference between $H_0$ and $\tilde H_0$.</div>
+<div class="def"><b class="t">Euler characteristic.</b> For a finite complex with $k_n$ simplices of dimension $n$,
+$$\chi(K)=\sum_n(-1)^n k_n=\sum_n(-1)^n b_n .$$
+The left side is a count of simplices, the right side a count of holes; the equality is a quick sanity check.
+Figure 2: $7-7+1=1$ and $b_0-b_1+b_2=2-1+0=1$. Sphere: $1-0+1=2$; torus: $1-2+1=0$.</div>
+
+<h2>7. Coefficients: $\mathbb{Z}$ versus a field</h2>
+<p>Hatcher works mostly over $\mathbb{Z}$. TDA software (ripser, GUDHI, giotto-tda) works over a <b>field</b>, almost always $\mathbb{Z}/2$.
+Three reasons:</p>
+<ul>
+  <li>Over a field, every $H_n(K)$ is a vector space, so it is described completely by one number, $b_n=\dim H_n$. No torsion to keep track of.</li>
+  <li>Over $\mathbb{Z}/2$ there are no signs: $\partial[v_0,v_1,v_2]=[v_1,v_2]+[v_0,v_2]+[v_0,v_1]$ and orientations can be ignored.
+  The matrix of $\partial$ has entries $0/1$ and is reduced with XOR operations, which is very fast.</li>
+  <li>The structure theorem for persistence (study note 2, Section 5) needs field coefficients.</li>
+</ul>
+<div class="warn"><b>When $\mathbb{Z}$ and $\mathbb{Z}/2$ disagree.</b> Over $\mathbb{Z}$ a homology group can have
+<b>torsion</b>: the Klein bottle has $H_1=\mathbb{Z}\oplus\mathbb{Z}/2$, the projective plane $\mathbb{RP}^2$ has $H_1=\mathbb{Z}/2$, $H_2=0$.
+Over $\mathbb{Z}/2$ the same spaces give $b_1=2,b_2=1$ (Klein bottle) and $b_1=1,b_2=1$ ($\mathbb{RP}^2$). So $\mathbb{Z}/2$ Betti numbers
+are not always the "integer" ones. For point clouds sampled from everyday shapes (circles, blobs, surfaces in $\mathbb{R}^3$) this almost never
+matters, and ripser lets you choose another prime $p$ if you want to check.</div>
+
+<h2>8. Maps between complexes and the maps they induce</h2>
+<p>This section is the engine of persistent homology. It answers: if a complex $K$ sits inside a bigger complex $K'$, what happens to
+the homology classes of $K$?</p>
+<div class="def"><b class="t">Simplicial map and chain map.</b> A map $f:K\to K'$ that sends vertices to vertices and every simplex of $K$
+to a simplex of $K'$ (possibly of lower dimension, if two vertices collapse) is a <b>simplicial map</b>. It induces a linear map on chains
+$f_\#:C_n(K)\to C_n(K')$ (a simplex that collapses is sent to $0$). This map commutes with the boundary:
+$$\partial\,f_\#=f_\#\,\partial ,$$
+and any family of linear maps $C_n(K)\to C_n(K')$ with this property is called a <b>chain map</b>.</div>
+<div class="def"><b class="t">Induced map on homology.</b> Because $f_\#$ commutes with $\partial$, it sends cycles to cycles and boundaries to
+boundaries, so it gives a well-defined homomorphism
+$$f_*:H_n(K)\to H_n(K'),\qquad f_*[z]=[f_\#z].$$
+Two rules (<b>functoriality</b>): $(g\circ f)_*=g_*\circ f_*$ and $(\mathrm{id})_*=\mathrm{id}$.</div>
+<p>The case TDA needs is the simplest one: $K\subseteq K'$ is a <b>subcomplex</b> and $f=i$ is the inclusion. Then $i_\#$ just reads a chain of
+$K$ as a chain of $K'$, and $i_*:H_n(K)\to H_n(K')$ asks: <i>is this cycle still a hole in the bigger complex, or has it been filled in?</i></p>
+<figure class="w80"><img src="../figures/fig_induced_map.png" alt="induced map">
+<figcaption>Figure 5. In $K$ the square is a hollow loop, $b_1(K)=1$. In $K'$ two triangles are added, the loop becomes a boundary, and
+$i_*$ sends its class to $0$: $b_1(K')=0$. In persistence language, this class is <i>born</i> in $K$ and <i>dies</i> in $K'$.</figcaption></figure>
+<div class="note"><b>Three things $i_*$ can do to a class $[z]\in H_n(K)$.</b> (1) Keep it alive: $i_*[z]\ne0$. (2) Kill it: $i_*[z]=0$
+because a new higher simplex filled it (Figure 5). (3) Merge it with another class: $i_*[z]=i_*[z']$ although $[z]\ne[z']$ in $K$,
+because a new simplex made $z-z'$ a boundary. New classes can also be <i>born</i> in $K'$ that are not in the image of $i_*$.
+Persistent homology is the bookkeeping of these events along a growing sequence $K_1\subseteq K_2\subseteq\cdots$.</div>
+
+<h2>9. Homotopy invariance (statement only)</h2>
+<div class="def"><b class="t">Theorem (Hatcher 2.10 and Cor. 2.11).</b> If two continuous maps $f,g:X\to Y$ are homotopic, then
+$f_*=g_*:H_n(X)\to H_n(Y)$ for all $n$. Consequently, if $X$ and $Y$ are <b>homotopy equivalent</b> (there are $f:X\to Y$, $g:Y\to X$
+with $g\circ f\simeq\mathrm{id}_X$ and $f\circ g\simeq\mathrm{id}_Y$), then $f_*$ is an isomorphism $H_n(X)\cong H_n(Y)$ for all $n$.</div>
+<p>Why this matters for TDA, in two sentences. First, the Betti numbers depend only on the shape, not on how we cut it into simplices:
+a circle made of 3 edges and a circle made of 300 edges have the same $H_1$. Second, a thick ring (annulus), a M&ouml;bius band and a thin
+circle are all homotopy equivalent, so a point cloud sampled from any of them is expected to show "one loop" ($b_1=1$).</p>
+<div class="note"><b>Singular homology, in one paragraph.</b> To state the theorem for arbitrary spaces and arbitrary continuous maps, Hatcher
+defines <b>singular homology</b>: $C_n(X)$ is generated by all continuous maps $\sigma:\Delta^n\to X$, with the same boundary formula.
+Theorem 2.27 says that for a $\Delta$-complex the simplicial and singular groups agree. This is the reason it is safe to compute with
+simplices and talk about the underlying shape. For TDA we only compute simplicial homology of finite complexes, so we take Theorem 2.27 as
+given and never work with singular chains directly.</div>
+
+<h2>10. What was left out, and why</h2>
+<table>
+<tr><th>Hatcher topic</th><th>why TDA (Rips persistence) does not need it</th></tr>
+<tr><td>Exact sequences, relative homology $H_n(X,A)$, long exact sequence of a pair</td><td>Persistence compares $H_n(K_\epsilon)$ and $H_n(K_{\epsilon'})$ through the map $i_*$ directly; the barcode is computed by matrix reduction, not through $H_n(K',K)$. (The pair sequence does appear in advanced topics such as extended persistence.)</td></tr>
+<tr><td>Excision, Mayer&ndash;Vietoris</td><td>Tools for computing the homology of spaces by cutting them into pieces. We compute from an explicit finite complex instead.</td></tr>
+<tr><td>Cellular homology, CW complexes, degree of a map</td><td>Efficient for hand computation of classical spaces; our complexes are given as simplex lists, so linear algebra on $\partial$ is enough.</td></tr>
+<tr><td>Axioms for homology, categories and functors</td><td>Only the two functoriality rules of Section 8 are used.</td></tr>
+<tr><td>Homology with general coefficients, torsion products</td><td>We fix the field $\mathbb{Z}/2$ (Section 7).</td></tr>
+</table>
+
+<h2>11. Glossary</h2>
+<table class="gloss">
+<tr><td>$n$-simplex $[v_0,\dots,v_n]$</td><td>convex hull of $n+1$ points in general position</td></tr>
+<tr><td>face</td><td>the simplex obtained by removing one vertex</td></tr>
+<tr><td>simplicial complex $K$</td><td>a family of vertex sets closed under taking subsets</td></tr>
+<tr><td>$C_n(K)$, $n$-chain</td><td>formal sums of $n$-simplices with coefficients in $R$</td></tr>
+<tr><td>$\partial_n$</td><td>boundary map, alternating sum of faces; $\partial\partial=0$</td></tr>
+<tr><td>$Z_n$, cycle</td><td>$\ker\partial_n$: chains with no boundary</td></tr>
+<tr><td>$B_n$, boundary</td><td>$\operatorname{im}\partial_{n+1}$: chains that bound something</td></tr>
+<tr><td>$H_n(K)=Z_n/B_n$</td><td>$n$-th homology group; its classes are cycles up to boundaries</td></tr>
+<tr><td>$b_n$, Betti number</td><td>rank (or dimension) of $H_n$: pieces, loops, voids for $n=0,1,2$</td></tr>
+<tr><td>$\tilde H_n$</td><td>reduced homology; $\tilde b_0=b_0-1$</td></tr>
+<tr><td>$\chi$</td><td>Euler characteristic, $\sum(-1)^nk_n=\sum(-1)^nb_n$</td></tr>
+<tr><td>chain map, $f_\#$</td><td>linear map on chains that commutes with $\partial$</td></tr>
+<tr><td>induced map, $f_*$</td><td>the map on homology, $f_*[z]=[f_\#z]$; functorial</td></tr>
+<tr><td>homotopy invariance</td><td>homotopy equivalent spaces have isomorphic homology</td></tr>
+</table>
+<p class="foot">References. A. Hatcher, <i>Algebraic Topology</i>, Cambridge University Press, 2002, Chapter 2.
+H. Edelsbrunner and J. Harer, <i>Computational Topology: An Introduction</i>, AMS, 2010, Chapters III&ndash;IV.</p>
+</section>
+</body>
+</html>

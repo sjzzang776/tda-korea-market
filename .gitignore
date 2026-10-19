@@ -1,0 +1,6 @@
+# raw prices are re-downloaded with data/download.py
+data/kr_indices_raw.csv
+data/us_indices_raw.csv
+data/kr_sector_stocks_raw.csv
+results/sector_panel.csv
+__pycache__/

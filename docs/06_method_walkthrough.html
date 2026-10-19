@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Method Walkthrough</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});"></script>
+</head>
+<body>
+
+<div class="cover">
+  <div class="kicker">Study note 3 of 3</div>
+  <h1>Why the Method Looks Like This: the TDA-for-Prices Pipeline, Step by Step</h1>
+  <p>Papers that apply persistent homology to stock prices (Gidea &amp; Katz 2018 and everything that follows it) all run the same sequence of steps before any data is analysed:
+     log returns → sliding-window point clouds → Vietoris&ndash;Rips → $H_1$ diagram → persistence landscape → $L^p$ norm → rolling variance / autocorrelation / spectral power → Kendall $\tau$.
+     This note asks, for each step, <i>why this and not something else</i>, and answers with a small experiment on point clouds. Every figure comes from
+     <code>06_method_walkthrough.ipynb</code>, which you can rerun.</p>
+  <p>Builds on study notes 1 (homology) and 2 (persistent homology). No analysis results here; only definitions and the reasons behind them.</p>
+  <div class="meta">Choi Sejin &middot; Sogang University, Mathematics &middot; October 2026</div>
+</div>
+
+<section class="cont">
+<h1>The pipeline and the questions</h1>
+<figure><img src="../figures/fig_pipeline.png" alt="pipeline"><figcaption>Figure 0. One cloud, one diagram, one number per trading day. Each box below gets a "why".</figcaption></figure>
+<table>
+<tr><th>step</th><th>the question</th><th>section</th></tr>
+<tr><td>log returns, one point per day</td><td>why not prices? why must the axes be comparable?</td><td>1</td></tr>
+<tr><td>sliding window of $w$ days</td><td>why a window at all, and why $w\approx50$?</td><td>2</td></tr>
+<tr><td>Vietoris&ndash;Rips, Euclidean, $H_1$</td><td>why Rips and not &#268;ech? why loops and not components or voids?</td><td>3</td></tr>
+<tr><td>persistence landscape</td><td>why not work with the diagram directly?</td><td>4</td></tr>
+<tr><td>$\|\lambda\|_1$, $\|\lambda\|_2$</td><td>why a norm, why these two, and what does it secretly measure?</td><td>5</td></tr>
+<tr><td>rolling variance, ACF(1), low-frequency power; Kendall $\tau$</td><td>why statistics <i>of</i> the norm instead of the norm? why a trend test, and why it needs a null?</td><td>6</td></tr>
+<tr><td>the whole thing on real data; alternatives</td><td>what each stage outputs; Wasserstein change; zigzag</td><td>7&ndash;8</td></tr>
+</table>
+
+<h2>1. Why log returns, and why a point cloud at all</h2>
+<p>A price series is a curve. Persistent homology needs a <b>set of points with a distance</b>. The construction in the paper is: one point per trading day, whose coordinates are the returns of several indices on that day. For the distance between two days to mean "how differently did the market move on those two days", two conditions must hold.</p>
+<ol>
+  <li><b>Comparable across time.</b> A 1% move in 2000 and in 2024 should be the same distance. Prices fail this (the level drifts); returns pass it. Log returns $r_t=\ln(P_t/P_{t-1})$ are used because up and down moves are then symmetric and they add over time.</li>
+  <li><b>Comparable across axes.</b> Euclidean distance adds the squared differences of all coordinates. If one axis moves 1% a day and another 0.1% a day, the second axis contributes nothing to any distance and is effectively dropped from the cloud. Index returns of similar markets are comparable as they are; a bond index or an FX rate is not, and must be rescaled first.</li>
+</ol>
+<figure><img src="../figures/walkthrough/01_why_returns.png" alt="why returns"><figcaption>Figure 1. The same 250 days as prices (left: a curve that only records the passage of time), as log returns (middle: a cloud where distance means "how different two days were"), and as returns of two series with very different scales (right: the small axis is invisible).</figcaption></figure>
+<div class="note">The LAMP report attached to this project rescaled each axis by a global $z$-score and replaced the FX return by its rolling standard deviation. Both are ways of satisfying condition 2; Section 5 discusses their side effects.</div>
+
+<h2>2. Why a sliding window, and why $w\approx50$</h2>
+<p>Persistent homology summarizes one set. To get a <i>time series</i> of summaries we need a set for every day: the last $w$ days,
+$X_t=\{x_{t-w+1},\dots,x_t\}$. Sliding $t$ one day at a time gives one cloud, one diagram and one number per day. The only free choice is $w$, and it is a trade-off:</p>
+<ul>
+  <li><b>$w$ too small:</b> 20 points can barely form a loop, so the diagram is mostly noise and the norm jumps around even when nothing happens.</li>
+  <li><b>$w$ too large:</b> the window mixes the old and the new regime for a long time, so a change shows up late and diluted.</li>
+</ul>
+<figure><img src="../figures/walkthrough/02_window_size.png" alt="window size"><figcaption>Figure 2. Two correlated return series switch at day 400 from calm and tightly correlated to stressed and decorrelated. $\|\lambda\|_1$ for four window lengths. Noise = sd/mean of the norm during the calm period; lag = days until the 10-day mean of the norm crosses the midpoint between the calm and the stressed level.</figcaption></figure>
+<table>
+<tr><th class="c">$w$</th><th class="c">calm-period noise (sd/mean)</th><th class="c">detection lag (days)</th></tr>
+<tr><td class="c">20</td><td class="c">1.81</td><td class="c">36</td></tr>
+<tr><td class="c">50</td><td class="c">1.07</td><td class="c">42</td></tr>
+<tr><td class="c">100</td><td class="c">0.24</td><td class="c">45</td></tr>
+<tr><td class="c">200</td><td class="c">0.26</td><td class="c">74</td></tr>
+</table>
+<p>Noise falls and lag rises with $w$. The paper's $w=50$ (about one trading quarter) and the robustness check $w=100$ sit where both are acceptable. There is no theory that fixes $w$; it is chosen by this kind of experiment, and results should always be reported for at least two values.</p>
+
+<h2>3. Why Vietoris&ndash;Rips, why Euclidean distance, why $H_1$</h2>
+<p><b>Rips, not &#268;ech.</b> The &#268;ech complex is the one the nerve theorem justifies, but building it requires testing whether $k+1$ balls have a common point. The Rips complex needs only the distance matrix and sits between two &#268;ech complexes, $\check C_{\epsilon/2}\subseteq R_\epsilon\subseteq\check C_\epsilon$, so its diagram can be off by at most a factor 2 in scale (study note 2, Section 1). For 50&ndash;100 points per day over 7,000 days, that is a good trade.</p>
+<p><b>Euclidean distance.</b> Once the axes are comparable (Section 1), the Euclidean distance between two days is the natural "how differently did the indices move". Other choices exist (correlation distance between windows, Mahalanobis) and change what a loop means; the paper keeps the simplest one.</p>
+<p><b>$H_1$, not $H_0$ or $H_2$.</b> The $H_0$ barcode of a Rips filtration is single-linkage clustering: its bars are nearest-neighbour distances, which mostly measure how <i>spread out</i> the cloud is, i.e. volatility. $H_2$ (voids) needs far more points than a 50-day window has in 3&ndash;4 dimensions. $H_1$ is the lowest dimension that sees <i>shape</i> beyond spread: a persistent loop means the joint returns circled around an empty region instead of filling a blob.</p>
+<figure><img src="../figures/walkthrough/03_h0_vs_h1.png" alt="H0 vs H1"><figcaption>Figure 3. Three clouds of 60 points. The $H_0$ norm orders them by spread (the wide blob scores highest); the $H_1$ norm is zero for both blobs and large only for the ring. Only $H_1$ distinguishes "spread out" from "shaped".</figcaption></figure>
+
+<h2>4. Why a persistence landscape instead of the diagram</h2>
+<p>A persistence diagram is a <b>multiset of points</b>. You cannot add two diagrams, take the mean of twenty, or compute the variance of a sequence of diagrams over time; and the paper needs exactly those operations (Section 6). Bubenik's landscape converts the diagram into a <b>function</b> $\lambda=(\lambda_1,\lambda_2,\dots)$: for each point $(b,d)$ draw the tent $f(\epsilon)=\max(0,\min(\epsilon-b,d-\epsilon))$ and let $\lambda_k(\epsilon)$ be the $k$-th largest tent at $\epsilon$. Functions live in a vector space, so averages, norms and confidence bands make sense, and the conversion is <b>stable</b>: $\sup_\epsilon|\lambda_k-\lambda'_k|\le d_B(D,D')$.</p>
+<figure><img src="../figures/walkthrough/04_landscape_mean.png" alt="landscape mean"><figcaption>Figure 4. Twenty noisy samples of the same ring. Left: their twenty $H_1$ diagrams overlaid, a scatter with no "mean diagram". Right: their landscapes averaged into one function with a $\pm1$ sd band. The one big loop appears as a single clear $\lambda_1$ peak; the noise bars are the tiny $\lambda_2,\lambda_3$.</figcaption></figure>
+<p>Other vectorizations exist (Betti curves, persistence images). The landscape is the paper's choice because it loses no information (the diagram can be recovered from it), has the stability result above, and has simple closed-form norms, which is the next step.</p>
+
+<h2>5. Why the $L^p$ norm, why $p=1$ and $2$, and what it secretly measures</h2>
+<p>The norm $\|\lambda\|_p=\big(\sum_k\int|\lambda_k(\epsilon)|^p\,d\epsilon\big)^{1/p}$ collapses the landscape to one number per day. With lifetimes $\ell_j=d_j-b_j$ the integrals of the tents give</p>
+$$\|\lambda\|_1=\tfrac14\sum_j\ell_j^2,\qquad \|\lambda\|_2=\Big(\tfrac1{12}\sum_j\ell_j^3\Big)^{1/2}.$$
+<p>So $\|\lambda\|_1$ counts <b>every loop</b>, weighted by the square of its lifetime, and $\|\lambda\|_2$ is dominated by the <b>longest</b> bars. In the notebook, adding twenty short loops (lifetime 0.2) to one long loop (lifetime 1.8) raises $\|\lambda\|_1$ by 25% and $\|\lambda\|_2$ by 1.4%. The paper reports both because they answer slightly different questions, "how much loop structure overall" and "is there one big loop"; in practice they move together, $\|\lambda\|_1$ being the noisier.</p>
+<div class="warn"><b>What the norm secretly measures: scale.</b> The Rips filtration is built from raw distances, so multiplying every return by $c$ multiplies every lifetime by $c$ and $\|\lambda\|_1$ by $c^2$. The notebook checks this exactly: returns $\times2$ give $4.00\times$ the norm, $\times3$ give $9.00\times$. A volatility spike is therefore a norm spike, with no change of shape at all.</div>
+<figure><img src="../figures/walkthrough/05_scale_caveat.png" alt="scale caveat"><figcaption>Figure 5. The regime series of Figure 2 ($w=50$). Top: raw norm, which jumps about $20\times$ because the stressed regime is both $2.1\times$ more volatile and less correlated. Bottom: each window standardized by its own standard deviation before building the cloud, which leaves only the change of shape (correlation $0.85\to0.1$), a jump of about $4\times$.</figcaption></figure>
+<table>
+<tr><th>option</th><th>what it does</th><th>side effect</th></tr>
+<tr><td>nothing (Gidea &amp; Katz)</td><td>norm = shape $\times$ scale</td><td>must always be compared with a volatility measure</td></tr>
+<tr><td>global $z$-score of each axis (the LAMP report)</td><td>makes axes of different units comparable</td><td>uses the whole sample's mean and sd (look-ahead); does not remove time-varying volatility</td></tr>
+<tr><td>per-window standardization</td><td>norm = shape only</td><td>throws away the scale information, which may itself be part of the signal</td></tr>
+</table>
+<p>None of the three is wrong; they measure different things. What matters is to know which one a plot shows.</p>
+
+<h2>6. Why rolling variance, autocorrelation and spectral power, and why Kendall $\tau$</h2>
+<p>The paper does <b>not</b> use the norm itself as the warning signal. It uses three rolling statistics of the norm series, borrowed from the theory of <b>critical slowing down</b> (Scheffer et al. 2009): as a dynamical system approaches a tipping point, it recovers more slowly from small shocks, so its fluctuations become larger (variance $\uparrow$), more persistent (lag-1 autocorrelation $\uparrow$) and slower (low-frequency spectral power $\uparrow$).</p>
+$$\hat\sigma^2_t=\tfrac{1}{L-1}\sum_{s=t-L+1}^{t}(y_s-\bar y_t)^2,\qquad
+\hat\rho_t(1)=\frac{\sum_s(y_s-\bar y_t)(y_{s-1}-\bar y_t)}{\sum_s(y_s-\bar y_t)^2},\qquad
+\bar S_t=\tfrac{1}{|\Omega_{\rm low}|}\sum_{\omega\in\Omega_{\rm low}}\hat S_t(\omega).$$
+<p>The cleanest model of a system approaching a tipping point is an AR(1) process $y_t=\phi\,y_{t-1}+\varepsilon_t$ whose $\phi$ drifts toward 1 (at $\phi=1$ shocks never decay).</p>
+<figure><img src="../figures/walkthrough/06_critical_slowing_down.png" alt="critical slowing down"><figcaption>Figure 6. AR(1) with $\phi$ rising from 0.2 to 0.95 over 1,500 steps, rolling statistics with $L=300$. All three rise over the drift (Kendall $\tau$ 0.82&ndash;0.91 over the whole period), although any single 250-step stretch can be flat ($\tau\approx0.4$&ndash;$0.5$).</figcaption></figure>
+<p><b>Why Kendall $\tau$.</b> For a statistic $z$ over days $t=1,\dots,n$, $\tau$ is the share of pairs $s&lt;t$ with $z_s&lt;z_t$ minus the share with $z_s&gt;z_t$. It is a rank statistic: it ignores the size of $z$ and outliers and only asks "is it going up?". $\tau=1$ means a monotone increase. It is the standard trend test in the early-warning literature, which is why the paper uses it.</p>
+<div class="warn"><b>Why a $\tau$ value alone proves nothing.</b> Consecutive windows share 49 of their 50 days, so the norm series is strongly persistent, and its 500-day rolling variance is smoother still. Over any 250-day stretch such a series is either mostly rising or mostly falling, so large $|\tau|$ is common even when the data carry no information.</div>
+<figure><img src="../figures/walkthrough/07_null_tau.png" alt="null tau"><figcaption>Figure 7. 6,000 days of iid returns in three dimensions pushed through the whole pipeline. Left: the norm series is persistent purely because the windows overlap. Right: Kendall $\tau$ of its 500-day rolling variance over 400 random 250-day windows; one window in six has $|\tau|&gt;0.8$ although the returns contain nothing. With real returns, whose volatility clusters, the share is much higher.</figcaption></figure>
+<p>The consequence for any application: a pre-crash $\tau$ must be reported together with the distribution of $\tau$ over random windows of the same series (an empirical $p$-value). The original paper does not do this.</p>
+
+<h2>7. The pipeline end to end on one real window</h2>
+<p>To see what each stage actually outputs, the notebook takes KOSPI / KOSPI 200 / KOSDAQ returns for 2019&ndash;2020 and shows a calm and a stressed 50-day window.</p>
+<figure><img src="../figures/walkthrough/08_real_windows.png" alt="real windows"><figcaption>Figure 8. Top: a calm window (ending 2019-11-29). Bottom: the window ending 2020-03-20, in the COVID-19 sell-off. Left: the cloud (two of three axes). Middle: the Rips diagram. Right: the landscape. Note that the stressed window is <i>not</i> automatically loopier: its points spread along a line (the indices fell together), which gives few loops and a small norm. Loops need dispersion <i>between</i> the axes, not just large moves.</figcaption></figure>
+<figure><img src="../figures/walkthrough/09_real_series.png" alt="real series"><figcaption>Figure 9. The same two years as time series: KOSPI, the daily norm ($w=50$), and its rolling variance ($L=120$). The norm spikes during the sell-off (the scale effect of Section 5), and the rolling variance lags it by its window length. Whether anything rises <i>before</i> the dashed line is the research question of a separate notebook, not of this note.</figcaption></figure>
+
+<h2>8. Two alternatives you will meet</h2>
+<p><b>Level versus change: Wasserstein distance.</b> The norm measures the <i>level</i> of loop structure in a window. The Wasserstein distance $W_p(D_t,D_{t+1})$ between consecutive diagrams measures how much the structure <i>changed</i> from one day to the next; points can be matched to the diagonal, so births and deaths count too. The two are complementary: a window can have a high but stable norm, or a low but rapidly changing one. In the notebook their correlation over 2019&ndash;2020 is only 0.21.</p>
+<figure><img src="../figures/walkthrough/10_wasserstein.png" alt="wasserstein"><figcaption>Figure 10. Norm level and day-to-day Wasserstein change, both as $z$-scores, 2019&ndash;2020.</figcaption></figure>
+<p><b>Zigzag persistence.</b> Standard persistence needs a <i>nested</i> sequence $K_1\subseteq K_2\subseteq\cdots$. Consecutive sliding windows are not nested: each day one point leaves and one enters. Zigzag persistence (Carlsson &amp; de Silva 2010) allows arrows in both directions, $K_1\to K_1\cup K_2\leftarrow K_2\to\cdots$, and still has a well-defined barcode. The "union trick" in the LAMP report, standard persistence of $X_t\cup X_{t+1}$, computes exactly the middle object of this zigzag. With windows that overlap in 49 of 50 points the union is almost the same cloud as either window, which is why that report saw no difference. The notebook shows where zigzag would matter: with <i>non-overlapping</i> 25-day clouds, 16% of single clouds contain no loop at all while every union of two consecutive clouds does, and the union's norm is twice as large.</p>
+
+<h2>9. Summary: the "why" of each step</h2>
+<table>
+<tr><th>step</th><th>why</th><th>what to watch</th></tr>
+<tr><td>log returns, one point per day</td><td>comparable across time and axes</td><td>rescale axes with different units</td></tr>
+<tr><td>sliding window $w\approx50$</td><td>one cloud per day; enough points for loops, short enough to react</td><td>small $w$ = noise, large $w$ = lag; report two values</td></tr>
+<tr><td>Vietoris&ndash;Rips, Euclidean</td><td>needs only distances; within a factor 2 of &#268;ech</td><td>convention: edge if $d\le\epsilon$</td></tr>
+<tr><td>$H_1$</td><td>lowest dimension that sees shape beyond spread</td><td>$H_0\approx$ volatility, $H_2$ needs more points</td></tr>
+<tr><td>landscape</td><td>a function: can be averaged, has norms, is stable</td><td>drop the infinite $H_0$ bar</td></tr>
+<tr><td>$\|\lambda\|_1$, $\|\lambda\|_2$</td><td>one number; $L^1$ counts all loops, $L^2$ the big ones</td><td>scales with volatility squared</td></tr>
+<tr><td>rolling variance / ACF / low-frequency power</td><td>critical slowing down before a transition</td><td>lags by $L$; needs a long $L$ to be smooth</td></tr>
+<tr><td>Kendall $\tau$</td><td>rank-based trend test</td><td>persistent series make large $|\tau|$ common: always report random-window $\tau$</td></tr>
+</table>
+<p class="foot">References. M. Gidea, Y. Katz (2018), Physica A 491. P. Bubenik (2015), JMLR 16. M. Scheffer et al. (2009), Nature 461. G. Carlsson, V. de Silva (2010), "Zigzag persistence", Found. Comput. Math. 10.
+H. Edelsbrunner, J. Harer (2010), Computational Topology. Code: <code>06_method_walkthrough.ipynb</code>, <code>tda_utils.py</code>.</p>
+</section>
+</body>
+</html>
